@@ -10,8 +10,8 @@ Instructions:
 6) Look at the resulting report .html file
 
 Feel free to update the pipeline with more statistics and visualizations.
-Remember to re run tar_make() everytime you apply changes. Use 
-targets:tar_visNetwork() to look for outdated objects.
+Remember to re run tar_make() everytime you make changes. Use 
+targets::tar_visNetwork() to look for outdated objects.
 
 Warning: datasets are quite large, and code is not optimized for performance.
 Running the entire pipeline might take much time with non recent hardware, 
