@@ -28,16 +28,16 @@ col_plot <- function(data, x, y, group, mult = 1, Legend = F, text_vjust = 0, te
 }
 
 
-map_plot <- function(data, lng, lat, group, k = 0.01, Zoom = 11, Type = "toner-lite", transp = 0.05,
+map_plot <- function(data, lng, lat, group, Zoom = 11, Crop = F, Type = "toner-lite", transp = 0.05,
                      dot.size = 0.85, col_man = "black", fill_man = "black", x.lab = "longitude",
                      y.lab = "latitude", Title = "map") {
   lng = parse(text = lng)
   lat = parse(text = lat)
   group = parse(text = group)
   
-  map.lim = c(min(data[, eval(lng)]) - k, min(data[, eval(lat)]) - k, 
-              max(data[, eval(lng)]) + k, max(data[, eval(lat)]) + k)
-  map = get_stamenmap(bbox = map.lim, zoom = Zoom, maptype = Type)
+  map.lim = c(min(data[, eval(lng)]), min(data[, eval(lat)]), 
+              max(data[, eval(lng)]), max(data[, eval(lat)]))
+  map = get_stamenmap(bbox = map.lim, zoom = Zoom, maptype = Type, crop = Crop)
   
   map.plot <- ggmap(map) +
     geom_point(data = data, 
