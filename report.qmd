@@ -1,0 +1,284 @@
+---
+title: "Cyclistic case study"
+author: G.B.
+format:
+  html:
+    self-contained: true
+    code-tools: true
+    theme: cosmo
+    fontsize: 0.9em
+editor: visual
+---
+
+::: {style="text-align: justify"}
+## Introduction
+
+In this case study we will perform real-world tasks of a junior data analyst, working for a fictional bike sharing company, called Cyclistic. This case study is taken from [Google data analytics professional certificate](https://www.coursera.org/professional-certificates/google-data-analytics) on Coursera.
+
+Cyclistic's director of marketing believes the company's future success depends on maximizing the number of annual memberships. Therefore our (fictional) team wants to understand how casual riders and annual members differ. The final goal is to design a new marketing strategy to convert casuals into members, and more specifically, we need to answer two questions:
+
+-   How Cyclistic can increase its revenue based on the available data?
+-   How the marketing team can use social media to help with maximizing the number of members?
+
+but first, the marketing team recommendations must be backed up with compelling data insights and visualizations, in order to get approved by the management.
+
+## A brief introduction to 'targets' package
+
+For better reproducibility, this case study was built as a [targets package](https://books.ropensci.org/targets/) pipeline, embedded in a [RStudio project](https://support.rstudio.com/hc/en-us/articles/200526207-Using-RStudio-Projects). Dependency management is performed with [renv package](https://rstudio.github.io/renv/articles/renv.html). See the linked resources for more details. In order to reproduce the analysis, download the project [source code](https://github.com/G-Bez/Cyclistic-case-study) from github and follow the provided instructions.
+
+The 'targets' package is a make-like pipeline tool for Statistics and data science in R. It's a great tool for project oriented workflows like RStudio projects. With targets, you can maintain a reproducible workflow without repeating yourself. The package learns how your pipeline fits together, skips costly runtime for tasks that are already up to date, runs only the necessary computation, supports implicit parallel computing, abstracts files as R objects, and shows tangible evidence that the results match the underlying code and data.
+
+Every 'targets' workflow needs a special configuration script called "\_targets.R", where you configure and define the pipeline (set needed packages and other pipeline options/parameters, define pipeline components, etc). A default configuration script with help comments can be created with a very simple function: `targets::use_targets()`. `targets::tar_make()` function runs the actual pipeline as it was designed by the user. This function creates a reproducible external R process which then reads the "targets.R" script and runs the correct targets in the correct order. The output of the pipeline is automatically saved in "\_targets/" data store folder, and you can easily read the output with `targets::tar_read()` and `targets::tar_load()` functions.
+
+You can also visualize the dependency graph of your pipeline with `targets::tar_visnetwork()` function. Below you can see the dependency graph for our case study.
+
+```{r Pipeline graph}
+targets::tar_visnetwork()
+```
+
+The graph is a comprehensive interactive visualization of each step of our analysis, starting from the initial data import and manipulation. Outdated objects are colored in light blue. Everytime we run `tar_make()` function, only outdated objects are updated. This is one of the main advantages of targets pipelines.
+
+## Packages
+
+Here is the list of packages used throughout this case study.
+
+-   **targets**: Make-like pipeline tool.
+-   **tarchetypes**: Enables drake-like syntax for 'targets' objects.
+-   **visNetwork**: Draw interactive pipeline dependency graph.
+-   **fst**: Enables additional formats for exported 'targets' objects.
+-   **data.table**: Fast data manipulation.
+-   **lubridate**: Datetime tools.
+-   **geosphere**: Spherical trigonometry for spatial applications.
+-   **rstatix**: Framework for basic statistical tests.
+-   **robustbase**: Basic robust statistics.
+-   **ggplot2**: Data visualization.
+-   **ggmap**: Spatial visualizations with for ggplot2 users.
+-   **viridisLite**: Colorblind friendly color palettes.
+-   **patchwork**: easy plot composition for ggplot2 users.
+
+Below we load some of these packages (only the ones needed to render this Quarto report).
+
+```{r Packages}
+#| output: false
+library(targets)
+library(data.table)
+library(ggplot2)
+library(ggmap)
+library(patchwork)
+```
+
+## Dataset
+
+The relevant historical bike trip data can be downloaded from [this url](https://divvy-tripdata.s3.amazonaws.com/index.html) (see [license agreement](https://www.divvybikes.com/data-license-agreement)). Here we use data ranging from June 2021 to May 2022 (archives from "202106-divvy-tripdata.zip" to "202205-divvy-tripdata.zip" included)
+
+Each archive contains a single monthly dataset, where each observation represents a unique bike ride. Each dataset has 13 columns/variables:
+
+-   **ride_id**: alphanumeric id for each ride.
+-   **rideable_type**: Bike type. Categorical variable with 3 levels: "classic_bike", "docked_bike", "electric_bike".
+-   **member_casual**: Customer type. Categorical variable with 2 levels: "casual", "member".
+-   **started_at**: Ride start datetime.
+-   **ended_at**: Ride end datetime.
+-   **start_station_name**: Name of the start station.
+-   **start_station_id**: Alphanumeric id for start station.
+-   **end_station_name**: Name of the end station.
+-   **end_station_id**: Alphanumeric id for end station.
+-   **start_lat**: Start latitude coordinate.
+-   **start_lng**: Start longitude coordinate.
+-   **end_lat**: End latitude coordinate.
+-   **end_lng**: End longitude coordinate.
+
+## Data manipulation
+
+As first step, the individual datasets have been scraped from the website, and then merged into a total dataset, manipulated and cleansed. Four additional variables were added to the initial total dataset:
+
+-   **ride_length**: Ride length in seconds ('ended_at' - 'started_at').
+-   **year_month**: Year and month value extracted from 'started_at' variable.
+-   **weekday**: Day of week extracted from 'started_at' variable.
+-   **ride_dist**: Mileage in meters. Computed from latitude and longitude values.
+
+The resulting dataset was called 'raw.tot_data' (see "/R/get_data.R" script from source code for more details). Then some data cleansing was performed. Non reasonable observations were dropped (see "/R/data_cleansing.R" script for more details). Since this is only a case study, we don't have team mates and stakeholders to ask to how to deal with those observations. So here we adopt a combination of common sense and a descriptive approach:
+
+-   Removed obs. with 'ride_length' \< 0, since negative times don't make sense.
+-   Removed obs. with 'ride_length' \> extreme of upper whisker of its boxplot adjusted for skewed distributions (see `robustbase::adjboxStats()` documentation).
+-   Removed obs. with 'ride_dist' = 0, and 'start_station_name' != 'end_station_name'.
+-   Removed obs. with 'ride_dist' != 0, and 'start_station_name' = 'end_station_name'.
+-   Removed the two highest 'ride_dist' values, since max value is physically impossible, and the second highest one, while it might make sense in theory, is also an extremely far outlier compared to other values.
+
+Also, many missing observations were removed. Station IDs and names variables were entirely dropped, since they have many non imputable missing values and we won't use those variables in the following analysis. Also 5036 rows with missing 'end_lat', 'end_lng' and 'ride_dist' were removed.
+
+```{r missing values}
+cbind(miss_val = lapply(tar_read(raw.tot_data), is.na) |> lapply(sum))
+```
+
+::: {.callout-important collapse="false"}
+## Warning!
+
+Am arbitrary approach is not recommended for real case scenarios. Arbitrarily removing observations from datasets is bad practice, and might lead to strongly biased results. Always confront with your team and project stakeholders before removing any observation. However this is only a fictional case study, and this is the best we can do here.
+:::
+
+The resulting final dataset was called 'tot_data'. It has 5.673.722 rows and 13 columns.
+
+```{r tot_data structure}
+tot_data <- tar_read(tot_data)
+str(tot_data)
+```
+
+## Explorative analysis
+
+Next step is a brief exploratory analysis, whose results were assigned to two distinct target objects, called 'eda_plots' and 'eda_stats' (see "/R/eda.R" script from source code for more details).
+
+'eda_plots' is a length 2 list with two boxplots of 'ride_length' and 'ride_dist' variables, both grouped by 'member_casual' variable, being the main variable of interest for this case study. With this in mind, all of the following computed statistics and visualization where grouped by 'member_casual'.
+
+Before showing the plots, we apply a custom ggplot2 theme.
+
+```{r Custom theme}
+theme_update(
+  axis.text = element_text(size = 11),
+  legend.background = element_blank(),
+  panel.background = element_rect(fill = "grey85"),
+  panel.border = element_rect(colour = "black", fill = NA),
+  panel.grid = element_line(colour = "whitesmoke"),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.major.x = element_blank(),
+  plot.title = element_text(hjust = 0.5),
+  plot.subtitle = element_text(face = "italic", hjust = 0.5),
+  strip.background = element_rect(colour = "black", fill = "grey85"),
+  strip.text = element_text(size = 10, face = "bold"),
+  title = element_text(size = 12, face = "bold")
+)
+```
+
+Below the two boxplots we mentioned earlier.
+
+```{r boxplots}
+#| warning: false
+#| out-width: "90%"
+#| out-height: "90%"
+eda_plots <- tar_read(eda_plots)
+eda_plots$rl_box + eda_plots$rd_box # patchwork composition
+```
+
+All the four distributions are heavily right skewed, with mean (black dot) \> median, long upper whiskers and many outliers on the upper side.
+
+Looking at 'ride_length' plot, we notice casuals group has higher variance than members one, since casuals box is wider. Also, all casuals boxplot statistics have higher values than their members counterparts. Hence it seems like casual customers have a tendency to take longer rides, and more diverse use cases for Cyclistic's bikes. Conversely, the two 'ride_dist' boxplots look very similar, suggesting the two groups cover the same distance on average. Additional more formal analysis is required here in order to draw conclusions. This preliminar graphical analysis suggests members are more likely to use Cyclistic's bikes for daily routine tasks, like commuting to work, compared to casual customers who occasionally rent them for a wider variety of purposes. Moreover, from the boxplots results, it's clear that the current Cyclistic strategy doesn't profit from 'ride_length', since members, being the most profitable group, take shorter rides.
+
+We now take a look at 'eda_stats' target object to get more insights. This objects is a list including some descriptive statistics about 'ride_length', 'ride_dist' and 'rideable_type' variables, some of them also grouped by month and day of week, for a deeper insight. It also includes two-tailed Welch's t-tests on the first two variables, and Cohen's d estimates of the effect size of 'member_casual' variable on them.
+
+Below some quick summary statistics.
+
+```{r import summary stats}
+eda_stats <- tar_read(eda_stats)
+```
+
+::: {#summaries .panel-tabset}
+## ride_length
+
+```{r}
+eda_stats$rl_summ$mc
+```
+
+## ride_dist
+
+```{r}
+eda_stats$rd_summ
+```
+:::
+
+Now let's inspect the Welch's tests results. The test is a better alternative to the standard t-test when homogeneity of variance between samples can't be assumed, like in this case. It's also sufficiently robust against departures from normality for large sample sizes.
+
+::: {.callout-note collapse="false"}
+## Note:
+
+Since we have a very large dataset, the test will almost certainly reject the null hypothesis of equal population means for member and casual customers. That's why we also estimate the actual effect sizes of 'member_casual' variable with Cohen's d statistics.
+:::
+
+::: {#welch_test .panel-tabset}
+## ride_length
+
+```{r}
+eda_stats$welch$rl
+```
+
+## ride_dist
+
+```{r}
+eda_stats$welch$rd
+```
+:::
+
+As expected, both tests reject the null hypothesis of equal population means. So let's see how strong the relationships between 'member_casuals', and 'ride_dist' and 'ride_length' variables actually are. Relying on the two boxplots, we can assume a moderate to high effect size on 'ride_length' variable, and a small effect size on 'ride_dist' variable.
+
+::: {#cohensD .panel-tabset}
+## ride_length
+
+```{r}
+eda_stats$cohensD$rl
+```
+
+## ride_dist
+
+```{r}
+eda_stats$cohensD$rd
+```
+:::
+
+As expected, our assumptions about effect sizes turned out correct. 'member_casual' has a moderate effect size on 'ride_length' variable, and a negligible effect on 'ride_dist'. That's more evidence supporting our previous findings about the two types of customers: casuals tend to take significantly longer rides and are more likely to use Cyclistic bikes for leisure.
+
+## Visualizations
+
+Last step of our analysis consists of some additional visualizations about the total number of rides, and some maps. These visualizations were assigned to 'cols' and 'maps' objects (see '/R/data_vis.R' script from source code for more details). The two objects include:
+
+-   A column plot for total number of rides, grouped by day of week.
+-   A column plot for total number of rides, grouped by month.
+-   A column plot for total number of rides for each bike type.
+-   A map paired with a scatterplot of start coordinates.
+-   A map paired with a scatterplot of end coordinates.
+
+```{r col1}
+#| message: false
+#| out-width: "90%"
+#| out-height: "90%"
+cols <- tar_read(cols)
+cols$nr.ym + cols$nr.wd # patchwork composition
+```
+
+These plots are quite interesting. The first one shows an obvious decline of the number of rides in cold seasons, for both casual and member customers, but the decline is steeper for casual riders. The second plot shows plain different trends in the number of rides by day of week: casuals do ride more during the weekend, while members have an opposite trend, with maximum number of rides during mid-week, and a decline towards the weekend. Those are pretty strong evidences that annual members mostly use Cyclistic bike sharing service to commute to work, while casuals rent bikes for leisure, mainly.
+
+Below we also take a look on customers preferences about bike types.
+
+```{r col2}
+#| message: false
+#| out-width: "90%"
+#| out-height: "90%"
+cols$nr.rt
+```
+
+As we can see, docked bikes ar by far the least popular category, and more important, those are only used by casual customers. It makes sense in accordance to previous findings, that annual members prefer the flexibility of non-docked bikes when commuting to work.
+
+In the end, we take a look at the two maps.
+
+```{r maps}
+#| out-width: "90%"
+#| out-height: "90%"
+maps <- tar_read(maps)
+maps$start_map + maps$end_map # patchwork composition
+```
+
+The two maps clearly show that member customers are Chicago locals mainly, while casuals are more dispersed and more likely to be tourists.
+
+## Findings and suggestions
+
+Based on the previous analysis we can conclude that:
+
+-   Most member customers are Chicago locals and use Cyclistic bikes for daily routine activities, especially to commute to work.
+-   Casual customers are more dispersed, use Cyclistic bikes for leisure, and are more likely to be tourists.
+
+Being the two groups fundamentally different between each other, it might be hard to convert casuals into members. However we can provide some potentially useful suggestions anyway:
+
+-   Gather more data on casual riders with surveys. Ask about their home addresses, daily habits, work, etc.
+-   Develop a dedicated social media campaign targeted at casual customers on weekends, specifically. A clever and low-cost idea might be asking the customers to share their weekend rides with Cyclistic on social media (in exchange for some discounts, etc.).
+-   Adopt a more flexible pricing structure, by offering something like a weekend-only membership. Also develop a plan to charge casual customers based on 'ride_length'.
+-   Consider cutting investments on docked bikes, and focus on non-docked ones.
+-   Consider an expansion to Chicago neighborhoods.
+-   Consider partnerships with local enterprises, like offering discounted memberships for employees.
+:::
